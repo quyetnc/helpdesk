@@ -1,0 +1,295 @@
+# Global values for all services
+namespace: default
+environment: dev
+
+# Global image registry (ECR or GHCR)
+global:
+  imageRegistry: "905418181527.dkr.ecr.ap-northeast-1.amazonaws.com"
+  imagePullPolicy: IfNotPresent
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SERVICE DEFINITIONS — One per service, templated by Deployment/Service
+# ═══════════════════════════════════════════════════════════════════════════
+
+services:
+  api-gateway:
+    serviceName: api-gateway
+    appLabel: api-gateway
+    tier: backend
+    image:
+      repository: "api-gateway"  # Full: registry + repo + tag
+      tag: "27d6498"
+    replicaCount: 2
+    service:
+      type: ClusterIP
+      port: 3000
+      targetPort: 3000
+      name: http
+    healthcheck:
+      path: /health
+      initialDelaySeconds: 10
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 3
+      livenessDelaySeconds: 20
+    resources:
+      requests:
+        cpu: 150m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 5
+      targetCPUUtilizationPercentage: 75
+    configMapRef: api-gateway-config
+    env:
+      - name: JWT_SECRET
+        valueFrom:
+          secretKeyRef:
+            name: jwt-secret
+            key: JWT_SECRET
+
+  user-service:
+    serviceName: user-service
+    appLabel: user-service
+    tier: backend
+    image:
+      repository: "user-service"
+      tag: "27d6498"
+    replicaCount: 2
+    service:
+      type: ClusterIP
+      port: 3001
+      targetPort: 3001
+      name: http
+    healthcheck:
+      path: /health
+      initialDelaySeconds: 10
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 3
+      livenessDelaySeconds: 20
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 5
+      targetCPUUtilizationPercentage: 75
+    configMapRef: user-service-config
+    env:
+      - name: DATABASE_URL
+        valueFrom:
+          secretKeyRef:
+            name: db-credentials
+            key: DATABASE_URL_USERS
+      - name: JWT_SECRET
+        valueFrom:
+          secretKeyRef:
+            name: jwt-secret
+            key: JWT_SECRET
+
+  ticket-service:
+    serviceName: ticket-service
+    appLabel: ticket-service
+    tier: backend
+    image:
+      repository: "ticket-service"
+      tag: "27d6498"
+    replicaCount: 2
+    service:
+      type: ClusterIP
+      port: 3002
+      targetPort: 3002
+      name: http
+    healthcheck:
+      path: /health
+      initialDelaySeconds: 10
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 3
+      livenessDelaySeconds: 20
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 5
+      targetCPUUtilizationPercentage: 75
+    configMapRef: ticket-service-config
+    env:
+      - name: DATABASE_URL
+        valueFrom:
+          secretKeyRef:
+            name: db-credentials
+            key: DATABASE_URL_TICKETS
+      - name: JWT_SECRET
+        valueFrom:
+          secretKeyRef:
+            name: jwt-secret
+            key: JWT_SECRET
+
+  notification-service:
+    serviceName: notification-service
+    appLabel: notification-service
+    tier: backend
+    image:
+      repository: "notification-service"
+      tag: "27d6498"
+    replicaCount: 1
+    service:
+      type: ClusterIP
+      port: 3003
+      targetPort: 3003
+      name: http
+    healthcheck:
+      path: /health
+      initialDelaySeconds: 10
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 3
+      livenessDelaySeconds: 20
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    autoscaling:
+      enabled: false  # Consumer service, no HPA
+    configMapRef: notification-service-config
+    secretRefs:
+      - rabbitmq-secret
+      - api-keys-secret
+
+  frontend:
+    serviceName: frontend
+    appLabel: frontend
+    tier: frontend
+    image:
+      repository: "frontend"
+      tag: "27d6498"
+    replicaCount: 2
+    service:
+      type: ClusterIP
+      port: 3100
+      targetPort: 3100
+      name: http
+    healthcheck:
+      path: /
+      initialDelaySeconds: 10
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 3
+      livenessDelaySeconds: 20
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    autoscaling:
+      enabled: true
+      minReplicas: 1
+      maxReplicas: 3
+      targetCPUUtilizationPercentage: 75
+    configMapRef: frontend-config
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CONFIGMAPS — Actual data embedded in values
+# ═══════════════════════════════════════════════════════════════════════════
+
+configMaps:
+  api-gateway-config:
+    NODE_ENV: "development"
+    PORT: "3000"
+    USER_SERVICE_URL: "http://user-service:3001"
+    TICKET_SERVICE_URL: "http://ticket-service:3002"
+    NOTIFICATION_SERVICE_URL: "http://notification-service:3003"
+    FRONTEND_URL: "http://frontend:3100"
+
+  user-service-config:
+    NODE_ENV: "development"
+    PORT: "3001"
+
+  ticket-service-config:
+    NODE_ENV: "development"
+    PORT: "3002"
+    REDIS_URL: "redis://my-redis-master:6379"
+    RABBITMQ_EXCHANGE: "ticket.events"
+    TS_NODE_TRANSPILE_ONLY: "true"
+    TS_NODE_COMPILER_OPTIONS: '{"module":"commonjs"}'
+
+  frontend-config:
+    VITE_ENV: "development"
+    VITE_API_BASE_URL: "http://api-gateway:3000"
+
+  notification-service-config:
+    NODE_ENV: "development"
+    PORT: "3003"
+    RABBITMQ_EXCHANGE: "ticket.events"
+    SENDGRID_FROM_EMAIL: "noreply@supporttickets.app"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SECRETS — Sensitive data (override per environment)
+# ═══════════════════════════════════════════════════════════════════════════
+
+secrets:
+  jwt-secret:
+    JWT_SECRET: "jwt-dev-secret-change-me"
+
+  db-credentials:
+    DATABASE_URL_USERS: "postgres://postgres:postgres-dev-123@postgres-users-postgresql:5432/users_db"
+    DATABASE_URL_TICKETS: "postgres://postgres:postgres-dev-123@postgres-tickets-postgresql:5432/tickets_db"
+
+  rabbitmq-secret:
+    RABBITMQ_USERNAME: "user"
+    RABBITMQ_PASSWORD: "rabbitmq-dev-123"
+    RABBITMQ_URL: "amqp://user:rabbitmq-dev-123@rabbitmq:5672/"
+
+  api-keys-secret:
+    SENDGRID_API_KEY: "sg-dev-key-change-me"
+    SLACK_WEBHOOK_URL: "https://hooks.slack.com/services/TDEV/BDEV/change-me"
+    DISCORD_WEBHOOK_URL: "https://discord.com/api/webhooks/XXXX/YYYY"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# INGRESS — Route traffic to services
+# ═══════════════════════════════════════════════════════════════════════════
+
+ingress:
+  enabled: true
+  className: nginx
+  hostname: ""  # Override in env values if using real domain
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+  paths:
+    - path: /
+      pathType: Prefix
+      service: frontend
+      port: 3100
+    - path: /api
+      pathType: Prefix
+      service: api-gateway
+      port: 3000
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PROMETHEUS — Monitoring (optional)
+# ═══════════════════════════════════════════════════════════════════════════
+
+prometheus:
+  enabled: false  # Enable only if Prometheus is running

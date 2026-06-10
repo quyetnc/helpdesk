@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: users_db_dev
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: users_db
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_users_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - user_service_dev
+
+  user-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: user_service_dev
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/users_db
+      JWT_SECRET: dev_jwt_secret_change_in_production
+      JWT_EXPIRES_IN: 24h
+      PORT: 3001
+      NODE_ENV: development
+    ports:
+      - '3001:3001'
+    volumes:
+      - ./src:/app/src
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - user_service_dev
+    restart: on-failure
+
+networks:
+  user_service_dev:
+    driver: bridge
+
+volumes:
+  postgres_users_data:
+    driver: local

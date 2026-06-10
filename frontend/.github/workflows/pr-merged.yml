@@ -1,0 +1,32 @@
+name: Merge → Build + Deploy Dev
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    uses: quyetnc/cicd-platform/.github/workflows/reusable-build.yml@v2
+    with:
+      project-name: "proops2026-helpdesk"
+      service-name: "frontend"
+    secrets:
+      REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+
+  deploy-dev:
+    needs: build
+    uses: quyetnc/cicd-platform/.github/workflows/reusable-deploy.yml@v2
+    with:
+      image-tag: ${{ needs.build.outputs.image-tag }}
+      environment: dev
+      project-name: "proops2026-helpdesk"
+      service-name: "frontend"
+    secrets:
+      KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
+      REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}

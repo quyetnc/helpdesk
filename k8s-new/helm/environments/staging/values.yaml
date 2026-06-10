@@ -1,0 +1,64 @@
+# Staging Environment Overrides
+
+environment: staging
+namespace: staging
+
+# Staging image tags (pinned versions)
+services:
+  api-gateway:
+    image:
+      tag: "v1.0.0-staging"
+    replicaCount: 2
+  user-service:
+    image:
+      tag: "v1.0.0-staging"
+    replicaCount: 2
+  ticket-service:
+    image:
+      tag: "v1.0.0-staging"
+    replicaCount: 2
+  notification-service:
+    image:
+      tag: "v1.0.0-staging"
+    replicaCount: 1
+  frontend:
+    image:
+      tag: "v1.0.0-staging"
+    replicaCount: 2
+  rabbitmq:
+    image:
+      tag: "3.12-management-alpine"
+
+# Staging secrets (from AWS Secrets Manager in prod, but placeholders here)
+secrets:
+  jwt-secret:
+    JWT_SECRET: "staging-jwt-secret-xxx"
+
+  db-credentials:
+    DATABASE_URL_USERS: "postgres://postgres:staging-password@postgres-users-postgresql:5432/users_db"
+    DATABASE_URL_TICKETS: "postgres://postgres:staging-password@postgres-tickets-postgresql:5432/tickets_db"
+
+  rabbitmq-secret:
+    RABBITMQ_USERNAME: "guest"
+    RABBITMQ_PASSWORD: "guest"
+    RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/"
+
+  api-keys-secret:
+    SENDGRID_API_KEY: "sg-staging-key-xxx"
+    SLACK_WEBHOOK_URL: "https://hooks.slack.com/services/staging/xxx"
+    DISCORD_WEBHOOK_URL: "https://discord.com/api/webhooks/staging/xxx"
+
+# Staging ingress (optional domain)
+ingress:
+  enabled: true
+  className: nginx
+  hostname: "staging-helpdesk.example.com"
+  paths:
+    - path: /
+      pathType: Prefix
+      service: frontend
+      port: 3100
+    - path: /api
+      pathType: Prefix
+      service: api-gateway
+      port: 3000

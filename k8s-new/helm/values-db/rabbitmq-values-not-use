@@ -1,0 +1,54 @@
+global:
+  storageClass: "ebs-gp3-dev"
+
+auth:
+  username: "rabbitmq-user"
+  password: "rabbitmq-dev-password-123"
+  erlangCookie: "rabbitmq-erlang-cookie-secret"
+
+management:
+  enabled: true
+
+persistence:
+  enabled: true
+  size: 1Gi
+  storageClass: "ebs-gp3-dev"
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Service configuration
+service:
+  type: ClusterIP
+  ports:
+    amqp: 5672
+    management: 15672
+
+# Enable metrics for HPA (optional)
+metrics:
+  enabled: false
+
+# Replica configuration for minikube
+replicaCount: 1
+
+# Readiness & Liveness probes
+readinessProbe:
+  enabled: true
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  successThreshold: 1
+  failureThreshold: 3
+
+livenessProbe:
+  enabled: true
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  successThreshold: 1
+  failureThreshold: 3

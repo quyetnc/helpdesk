@@ -1,0 +1,6 @@
+// Prisma configuration file
+// This file is optional but helps IDEs with Prisma support
+
+prisma {
+  "seed": "node prisma/seed.js"
+}

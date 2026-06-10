@@ -1,0 +1,53 @@
+name: Reusable Build
+
+on:
+  workflow_call:
+    inputs:
+      project-name:
+        type: string
+        required: true
+      service-name:
+        type: string
+        required: true
+    outputs:
+      image-tag:
+        description: "The commit SHA used as the image tag"
+        value: ${{ jobs.build.outputs.image-tag }}
+    secrets:
+      REGISTRY_TOKEN:
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image-tag: ${{ steps.set-tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Set image tag to commit SHA
+        id: set-tag
+        run: echo "tag=${{ github.sha }}" >> $GITHUB_OUTPUT
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.REGISTRY_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ inputs.project-name }}/${{ inputs.service-name }}:${{ steps.set-tag.outputs.tag }}

@@ -1,0 +1,19 @@
+auth:
+  enabled: false
+  
+master:
+  persistence:
+    enabled: true
+    size: 1Gi
+    storageClass: "ebs-gp3-dev"
+
+replica:
+  replicaCount: 0
+  
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi

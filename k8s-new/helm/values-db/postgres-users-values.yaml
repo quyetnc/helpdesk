@@ -1,0 +1,20 @@
+global:
+  postgresql:
+    auth:
+      username: "postgres"
+      password: "postgres-dev-123"
+      database: "users_db"
+
+primary:
+  persistence:
+    enabled: true
+    size: 1Gi
+    storageClass: "ebs-gp3-dev"
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 512Mi
+  limits:
+    cpu: 500m
+    memory: 1Gi

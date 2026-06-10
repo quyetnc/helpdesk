@@ -1,0 +1,17 @@
+name: IaC PR Merged — Apply
+
+on:
+  push:
+    branches: [main]
+    paths: ['iac/**']
+
+jobs:
+  iac-apply:
+    uses: proops2026-helpdesk/cicd-platform/.github/workflows/reusable-iac.yml@v1
+    with:
+      action: apply
+      environment: lab
+      working-directory: iac/lab
+    secrets:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}

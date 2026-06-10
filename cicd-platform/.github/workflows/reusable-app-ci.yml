@@ -1,0 +1,53 @@
+name: Reusable App CI
+
+on:
+  workflow_call:
+    inputs:
+      runtime-version:
+        type: string
+        description: "Runtime version (Node, Java, etc.)"
+        default: "20"
+      project-name:
+        type: string
+        description: "Project name for image"
+        required: true
+      service-name:
+        type: string
+        description: "Service name for image"
+        required: true
+      image-tag:
+        type: string
+        description: "Image tag (commit SHA recommended)"
+        required: true
+      push-image:
+        type: boolean
+        description: "Push to registry (true) or build only (false)"
+        default: false
+    secrets:
+      REGISTRY_USERNAME:
+        required: false
+      REGISTRY_TOKEN:
+        required: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build app
+        uses: quyetnc/cicd-platform/.github/actions/build-app@v1
+        with:
+          node-version: ${{ inputs.runtime-version }}
+
+      - name: Docker build and push
+        uses: quyetnc/cicd-platform/.github/actions/docker-build-push@v1
+        with:
+          image-name: ${{ inputs.project-name }}/${{ inputs.service-name }}
+          image-tag: ${{ inputs.image-tag }}
+          push: ${{ inputs.push-image }}
+          registry-username: ${{ secrets.REGISTRY_USERNAME || github.actor }}
+          registry-password: ${{ secrets.REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}

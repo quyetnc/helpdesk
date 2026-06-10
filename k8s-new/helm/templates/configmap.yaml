@@ -1,0 +1,14 @@
+{{- range $cmName, $cmData := $.Values.configMaps }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $cmName }}
+  namespace: {{ $.Values.namespace }}
+  labels:
+    managed-by: helm
+data:
+{{- range $key, $value := $cmData }}
+  {{ $key }}: {{ $value | quote }}
+{{- end }}
+{{- end }}

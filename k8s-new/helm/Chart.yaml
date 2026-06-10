@@ -1,0 +1,16 @@
+apiVersion: v2
+name: helpdesk-microservices
+description: Production-grade Helm chart for all helpdesk microservices
+type: application
+version: 2.0.0
+appVersion: "1.0"
+keywords:
+  - microservice
+  - kubernetes
+  - helm
+  - helpdesk
+  - argo-cd
+home: https://github.com/quyet/helpdesk
+maintainers:
+  - name: Quyet Nguyen
+    email: quyetnc99@gmail.com

@@ -1,0 +1,77 @@
+// Prisma schema for ticket-service
+// Handles tickets, comments, SLA tracking, and soft deletes
+// Service isolation: no foreign keys to users table (store UUID only)
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Priority levels for tickets
+enum Priority {
+  URGENT
+  HIGH
+  MEDIUM
+  LOW
+}
+
+// Status lifecycle for tickets
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  ON_HOLD
+  RESOLVED
+  CLOSED
+}
+
+// Tickets table
+// Service isolation: requester_id and assignee_id are UUIDs (no FK to users table)
+// SLA deadline is auto-calculated on creation based on priority
+model Ticket {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  requester_id  String        @db.Uuid // UUID from user-service, no FK
+  assignee_id   String?       @db.Uuid // UUID from user-service, optional, no FK
+  title         String
+  description   String
+  priority      Priority      @default(MEDIUM)
+  status        TicketStatus  @default(OPEN)
+  sla_deadline  DateTime      // Auto-calculated based on priority
+  resolved_at   DateTime?     // Set when status → RESOLVED
+  is_deleted    Boolean       @default(false)
+  created_at    DateTime      @default(now())
+  updated_at    DateTime      @updatedAt
+  comments      Comment[]
+
+  // Indexes for common queries
+  @@index([requester_id])
+  @@index([assignee_id])
+  @@index([status])
+  @@index([priority])
+  @@index([sla_deadline])
+  @@index([created_at])
+  @@index([is_deleted])
+}
+
+// Comments table
+// Service isolation: author_id is a UUID (no FK to users table)
+// Soft delete: is_deleted = true (never hard delete)
+model Comment {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ticket_id   String    @db.Uuid // Ref to Ticket.id (no FK constraint)
+  author_id   String    @db.Uuid // UUID from user-service, no FK
+  body        String
+  is_deleted  Boolean   @default(false)
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+  ticket      Ticket    @relation(fields: [ticket_id], references: [id], onDelete: Cascade)
+
+  // Index for listing comments by ticket
+  @@index([ticket_id])
+  @@index([is_deleted])
+  @@index([created_at])
+}

@@ -1,0 +1,139 @@
+# Production Environment Overrides
+# High availability, security, monitoring
+
+environment: prod
+namespace: prod
+
+# Prod image tags (pinned versions only)
+services:
+  api-gateway:
+    image:
+      tag: "v1.0.0"
+    replicaCount: 3
+    resources:
+      requests:
+        cpu: 250m
+        memory: 1Gi
+      limits:
+        cpu: 2000m
+        memory: 2Gi
+    autoscaling:
+      enabled: true
+      minReplicas: 3
+      maxReplicas: 10
+      targetCPUUtilizationPercentage: 70
+
+  user-service:
+    image:
+      tag: "v1.0.0"
+    replicaCount: 3
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+    autoscaling:
+      enabled: true
+      minReplicas: 3
+      maxReplicas: 8
+      targetCPUUtilizationPercentage: 70
+
+  ticket-service:
+    image:
+      tag: "v1.0.0"
+    replicaCount: 3
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+    autoscaling:
+      enabled: true
+      minReplicas: 3
+      maxReplicas: 8
+      targetCPUUtilizationPercentage: 70
+
+  notification-service:
+    image:
+      tag: "v1.0.0"
+    replicaCount: 2
+    resources:
+      requests:
+        cpu: 150m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+    autoscaling:
+      enabled: false  # Consumer, horizontal scaling not needed
+
+  frontend:
+    image:
+      tag: "v1.0.0"
+    replicaCount: 3
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 5
+      targetCPUUtilizationPercentage: 75
+
+  rabbitmq:
+    image:
+      tag: "3.12-management-alpine"
+    replicaCount: 1  # Use Helm chart for HA RabbitMQ
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: 2000m
+        memory: 2Gi
+
+# Production secrets (from AWS Secrets Manager - update these!)
+secrets:
+  jwt-secret:
+    JWT_SECRET: "CHANGE-ME-PROD-JWT-SECRET-xxx"
+
+  db-credentials:
+    DATABASE_URL_USERS: "postgres://postgres:CHANGE-ME-PROD-PASSWORD@rds-users-endpoint:5432/users_db"
+    DATABASE_URL_TICKETS: "postgres://postgres:CHANGE-ME-PROD-PASSWORD@rds-tickets-endpoint:5432/tickets_db"
+
+  rabbitmq-secret:
+    RABBITMQ_USERNAME: "CHANGE-ME-PROD-USER"
+    RABBITMQ_PASSWORD: "CHANGE-ME-PROD-PASSWORD"
+    RABBITMQ_URL: "amqp://CHANGE-ME-PROD-USER:CHANGE-ME-PROD-PASSWORD@rabbitmq-ha:5672/"
+
+  api-keys-secret:
+    SENDGRID_API_KEY: "CHANGE-ME-PROD-SENDGRID-KEY"
+    SLACK_WEBHOOK_URL: "CHANGE-ME-PROD-SLACK-URL"
+    DISCORD_WEBHOOK_URL: "CHANGE-ME-PROD-DISCORD-URL"
+
+# Production ingress (real domain + TLS)
+ingress:
+  enabled: true
+  className: nginx
+  hostname: "api.helpdesk.example.com"
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  paths:
+    - path: /
+      pathType: Prefix
+      service: frontend
+      port: 3100
+    - path: /api
+      pathType: Prefix
+      service: api-gateway
+      port: 3000

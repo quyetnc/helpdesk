@@ -1,0 +1,35 @@
+---
+- name: Install and configure nginx on EC2
+  hosts: webservers
+  become: true
+
+  tasks:
+    - name: Install nginx
+      dnf:
+        name: nginx
+        state: present
+
+    - name: Start and enable nginx service
+      service:
+        name: nginx
+        state: started
+        enabled: true
+
+    - name: Create custom index.html
+      copy:
+        content: |
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>ProOps2026 Day 19 — Ansible</title>
+          </head>
+          <body>
+            <h1>ProOps2026 Day 19 — Ansible configured this! ✅</h1>
+            <p>Terraform created the infrastructure.</p>
+            <p>Ansible installed nginx and served this page.</p>
+          </body>
+          </html>
+        dest: /usr/share/nginx/html/index.html
+        owner: root
+        group: root
+        mode: '0644'

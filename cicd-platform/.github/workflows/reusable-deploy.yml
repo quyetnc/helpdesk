@@ -1,0 +1,105 @@
+name: Reusable Deploy
+
+on:
+  workflow_call:
+    inputs:
+      image-tag:
+        type: string
+        required: true
+        description: "The SHA-based image tag to deploy"
+      environment:
+        type: string
+        required: true
+        description: "Target environment (dev, staging, or prod)"
+      project-name:
+        type: string
+        required: true
+      service-name:
+        type: string
+        required: true
+    secrets:
+      KUBE_CONFIG_DATA:
+        required: true
+      REGISTRY_TOKEN:
+        required: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to GHCR for verification
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.REGISTRY_TOKEN }}
+
+      - name: Verify image exists in GHCR
+        run: |
+          echo "==============================================="
+          echo "🔍 VERIFYING IMAGE EXISTS"
+          echo "==============================================="
+          echo ""
+          echo "Image: ghcr.io/${{ inputs.project-name }}/${{ inputs.service-name }}:${{ inputs.image-tag }}"
+          echo ""
+          docker pull ghcr.io/${{ inputs.project-name }}/${{ inputs.service-name }}:${{ inputs.image-tag }} && \
+          echo "✅ Image verified in GHCR - safe to deploy" || \
+          (echo "❌ Image NOT FOUND in GHCR - deployment aborted" && exit 1)
+          echo ""
+
+      # - name: Set up kubectl
+      #   uses: azure/setup-kubectl@v4
+
+      # - name: Configure kubeconfig
+      #   run: |
+      #     mkdir -p ~/.kube
+      #     echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 -d > ~/.kube/config
+      #     chmod 600 ~/.kube/config
+
+      - name: Deploy image to ${{ inputs.environment }} (SIMULATED)
+        run: |
+          echo "==============================================="
+          echo "🚀 DEPLOYMENT TO ${{ inputs.environment }}"
+          echo "==============================================="
+          echo ""
+          echo "Service: ${{ inputs.service-name }}"
+          echo "Environment: ${{ inputs.environment }}"
+          echo "Namespace: ${{ inputs.environment }}"
+          echo "Image: ghcr.io/${{ inputs.project-name }}/${{ inputs.service-name }}:${{ inputs.image-tag }}"
+          echo ""
+          echo "Command that would run:"
+          echo "  kubectl -n ${{ inputs.environment }} set image \\"
+          echo "    deployment/${{ inputs.service-name }} \\"
+          echo "    ${{ inputs.service-name }}=ghcr.io/${{ inputs.project-name }}/${{ inputs.service-name }}:${{ inputs.image-tag }}"
+          echo ""
+          echo "✅ Image deployment initiated"
+          echo ""
+
+      # - name: Wait for rollout
+      #   run: |
+      #     kubectl -n ${{ inputs.environment }} rollout status \
+      #       deployment/${{ inputs.service-name }} \
+      #       --timeout=180s
+
+      - name: Verify deployment (SIMULATED)
+        run: |
+          echo "==============================================="
+          echo "📋 DEPLOYMENT VERIFICATION"
+          echo "==============================================="
+          echo ""
+          echo "Environment: ${{ inputs.environment }}"
+          echo "Namespace: ${{ inputs.environment }}"
+          echo "Deployment: ${{ inputs.service-name }}"
+          echo ""
+          echo "=== Simulated Pods ==="
+          echo "NAME                               READY   STATUS    RESTARTS   AGE"
+          echo "${{ inputs.service-name }}-pod-xyz               1/1     Running   0          30s"
+          echo ""
+          echo "=== Simulated Image Running ==="
+          echo "Image: ghcr.io/${{ inputs.project-name }}/${{ inputs.service-name }}:${{ inputs.image-tag }}"
+          echo "Status: Running"
+          echo ""
+          echo "✅ Deployment verified in ${{ inputs.environment }} environment"

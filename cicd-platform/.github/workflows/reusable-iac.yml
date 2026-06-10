@@ -1,0 +1,63 @@
+name: Reusable IaC
+
+on:
+  workflow_call:
+    inputs:
+      action:
+        description: "plan | apply | destroy"
+        type: string
+        required: true
+      environment:
+        description: "dev | test | prod"
+        type: string
+        default: "dev"
+      working-directory:
+        description: "Terraform root config directory"
+        type: string
+        default: "iac/dev"
+      aws-region:
+        type: string
+        default: "ap-southeast-2"
+    secrets:
+      AWS_ACCESS_KEY_ID:
+        required: true
+      AWS_SECRET_ACCESS_KEY:
+        required: true
+
+jobs:
+  iac:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.6"
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Terraform Init
+        working-directory: ${{ inputs.working-directory }}
+        run: terraform init
+
+      - name: Terraform Validate
+        working-directory: ${{ inputs.working-directory }}
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: ${{ inputs.working-directory }}
+        run: terraform plan -no-color -out=tfplan
+
+      - name: Terraform Apply
+        if: inputs.action == 'apply'
+        working-directory: ${{ inputs.working-directory }}
+        run: terraform apply -auto-approve -no-color tfplan
+
+      - name: Terraform Destroy
+        if: inputs.action == 'destroy'
+        working-directory: ${{ inputs.working-directory }}
+        run: terraform destroy -auto-approve -no-color
