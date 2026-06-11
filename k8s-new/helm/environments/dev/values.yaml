@@ -9,7 +9,7 @@ namespace: default
 services:
   api-gateway:
     image:
-      tag: "27d6498"
+      tag: "d9d41d7"
     replicaCount: 1
     autoscaling:
       enabled: true
@@ -19,7 +19,7 @@ services:
 
   user-service:
     image:
-      tag: "27d6498"
+      tag: "d9d41d7"
     replicaCount: 1
     autoscaling:
       enabled: true
@@ -29,7 +29,7 @@ services:
 
   ticket-service:
     image:
-      tag: "27d6498"
+      tag: "d9d41d7"
     replicaCount: 1
     autoscaling:
       enabled: true
@@ -39,14 +39,14 @@ services:
 
   notification-service:
     image:
-      tag: "27d6498"
+      tag: "d9d41d7"
     replicaCount: 1
     autoscaling:
       enabled: false
 
   frontend:
     image:
-      tag: "27d6498"
+      tag: "d9d41d7"
     replicaCount: 1
     autoscaling:
       enabled: true

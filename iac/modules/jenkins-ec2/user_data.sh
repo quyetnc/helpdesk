@@ -35,10 +35,50 @@ echo "[$(date)] [INFO] Step 5: Create Jenkins data directory..."
 mkdir -p /var/jenkins_home
 chmod 750 /var/jenkins_home  # Secure: only owner can read/write
 
+# ─── Jenkins Init Scripts ──────────────────────────────────────────────────────
+echo "[$(date)] [INFO] Step 5b: Configure Jenkins CSRF proxy compatibility..."
+mkdir -p /var/jenkins_home/init.groovy.d
+cat > /var/jenkins_home/init.groovy.d/csrf.groovy << 'EOF'
+import jenkins.model.Jenkins
+import hudson.security.csrf.DefaultCrumbIssuer
+
+Jenkins.instance.setCrumbIssuer(new DefaultCrumbIssuer(true))
+Jenkins.instance.save()
+EOF
+
 # ─── Jenkins Docker Container ─────────────────────────────────────────────────
-echo "[$(date)] [INFO] Step 6: Pull Jenkins Docker image..."
-JENKINS_IMAGE="jenkins/jenkins:2.426.1-jdk17"  # Pin specific version
-docker pull "$JENKINS_IMAGE"
+echo "[$(date)] [INFO] Step 6: Build custom Jenkins image with AWS CLI, kubectl, Helm..."
+JENKINS_BASE="jenkins/jenkins:2.504.1-jdk17"
+JENKINS_IMAGE="jenkins-custom:latest"
+
+# Write Dockerfile inline
+cat > /tmp/Dockerfile.jenkins << 'DOCKERFILE'
+FROM jenkins/jenkins:2.504.1-jdk17
+
+USER root
+
+RUN apt-get update -qq && apt-get install -y -qq curl unzip
+
+# AWS CLI v2
+RUN curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip \
+    && unzip -q /tmp/awscliv2.zip -d /tmp \
+    && /tmp/aws/install \
+    && rm -rf /tmp/awscliv2.zip /tmp/aws
+
+# kubectl — pinned to match EKS cluster version
+RUN curl -fsSLo /usr/local/bin/kubectl \
+    "https://dl.k8s.io/release/v1.30.0/bin/linux/amd64/kubectl" \
+    && chmod +x /usr/local/bin/kubectl
+
+# Helm
+RUN curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 \
+    | DESIRED_VERSION=v3.14.0 bash
+
+USER jenkins
+DOCKERFILE
+
+docker build -f /tmp/Dockerfile.jenkins -t "$JENKINS_IMAGE" .
+echo "[$(date)] [INFO] Custom Jenkins image built: ${JENKINS_IMAGE}"
 
 echo "[$(date)] [INFO] Step 7: Start Jenkins container..."
 docker run -d \
@@ -46,9 +86,8 @@ docker run -d \
   --restart always \
   -p 8080:8080 \
   -p 50000:50000 \
-  -v /var/jenkins_home:/var/jenkins/ref \
+  -v /var/jenkins_home:/var/jenkins_home \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  -e JENKINS_OPTS="--httpPort=8080" \
   -e JAVA_OPTS="-Xmx512m -Xms256m" \
   --memory=1g \
   --cpus=1 \
@@ -67,7 +106,7 @@ fi
 # ─── Get Initial Password ─────────────────────────────────────────────────────
 echo "[$(date)] [INFO] Step 9: Retrieving Jenkins initial admin password..."
 for attempt in {1..5}; do
-  if JENKINS_PASSWORD=$(docker exec jenkins cat /var/jenkins/secrets/initialAdminPassword 2>/dev/null); then
+  if JENKINS_PASSWORD=$(docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword 2>/dev/null); then
     echo "[$(date)] [INFO] Successfully retrieved password on attempt $attempt"
     break
   fi

@@ -1,0 +1,268 @@
+pipeline {
+    agent any
+
+    environment {
+        ECR_REGISTRY = '905418181527.dkr.ecr.ap-northeast-1.amazonaws.com'
+        ECR_REPO     = 'frontend'
+        AWS_REGION   = 'ap-northeast-1'
+        CLUSTER_NAME = 'helpdesk-quyetnc-cluster'
+        HELM_CHART   = 'k8s-new/helm'
+        HELM_RELEASE = 'helpdesk'
+    }
+
+    options {
+        timeout(time: 60, unit: 'MINUTES')
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+    }
+
+    stages {
+
+        // ── 1. Init ────────────────────────────────────────────────────────────
+        stage('Init') {
+            steps {
+                script {
+                    env.IMAGE_TAG  = sh(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
+                    env.IMAGE_FULL = "${env.ECR_REGISTRY}/${env.ECR_REPO}:${env.IMAGE_TAG}"
+                    currentBuild.displayName = "#${env.BUILD_NUMBER} — ${env.IMAGE_TAG}"
+                    echo "Image: ${env.IMAGE_FULL}"
+                }
+            }
+        }
+
+        // ── 2. Install Dependencies (once, shared by Quality Gate stages) ──────
+        stage('Install Dependencies') {
+            steps {
+                dir('frontend') {
+                    script {
+                        docker.image('node:20-alpine').inside('-u root') {
+                            sh 'npm ci --silent'
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── 3. Quality Gate — Lint + Test run in parallel ──────────────────────
+        stage('Quality Gate') {
+            parallel {
+                stage('Lint') {
+                    steps {
+                        dir('frontend') {
+                            script {
+                                docker.image('node:20-alpine').inside('-u root') {
+                                    sh 'npm run lint'
+                                }
+                            }
+                        }
+                    }
+                }
+                stage('Test') {
+                    steps {
+                        dir('frontend') {
+                            script {
+                                docker.image('node:20-alpine').inside('-u root') {
+                                    sh 'npm run test:coverage'
+                                }
+                            }
+                        }
+                    }
+                    post {
+                        always {
+                            publishHTML(target: [
+                                allowMissing       : true,
+                                reportDir          : 'frontend/coverage/lcov-report',
+                                reportFiles        : 'index.html',
+                                reportName         : 'Test Coverage Report',
+                                keepAll            : true
+                            ])
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── 4. SonarQube — reads coverage/lcov.info from Test stage ───────────
+        stage('SonarQube') {
+            steps {
+                dir('frontend') {
+                    script {
+                        docker.image('node:20-alpine').inside('-u root') {
+                            withCredentials([string(credentialsId: 'SONAR_TOKEN', variable: 'SONAR_TOKEN')]) {
+                                sh """
+                                    npx sonar-scanner \
+                                        -Dsonar.token=${SONAR_TOKEN} \
+                                        -Dsonar.host.url=https://sonarcloud.io
+                                """
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── 5. Build & Push — Build Once, tag with git SHA ─────────────────────
+        stage('Build & Push Image') {
+            steps {
+                script {
+                    withCredentials([[
+                        $class              : 'AmazonWebServicesCredentialsBinding',
+                        credentialsId       : 'aws-credentials',
+                        accessKeyVariable   : 'AWS_ACCESS_KEY_ID',
+                        secretKeyVariable   : 'AWS_SECRET_ACCESS_KEY'
+                    ]]) {
+                        sh """
+                            aws ecr get-login-password --region ${AWS_REGION} \
+                                | docker login --username AWS --password-stdin ${ECR_REGISTRY}
+                        """
+
+                        // Pull previous image to use as cache layer
+                        sh "docker pull ${env.IMAGE_FULL} || true"
+
+                        // Build once with SHA tag — same image promotes through all envs
+                        sh """
+                            docker build \
+                                --cache-from ${env.IMAGE_FULL} \
+                                --build-arg VITE_API_BASE_URL=http://api-gateway:3000 \
+                                -t ${env.IMAGE_FULL} \
+                                frontend/
+                        """
+
+                        sh "docker push ${env.IMAGE_FULL}"
+                        echo "Pushed: ${env.IMAGE_FULL}"
+                    }
+                }
+            }
+        }
+
+        // ── 6. Deploy Dev — auto on every merge to main ────────────────────────
+        stage('Deploy Dev') {
+            when { branch 'main' }
+            steps {
+                script {
+                    withCredentials([[
+                        $class              : 'AmazonWebServicesCredentialsBinding',
+                        credentialsId       : 'aws-credentials',
+                        accessKeyVariable   : 'AWS_ACCESS_KEY_ID',
+                        secretKeyVariable   : 'AWS_SECRET_ACCESS_KEY'
+                    ]]) {
+                        sh "aws eks update-kubeconfig --name ${CLUSTER_NAME} --region ${AWS_REGION}"
+
+                        sh """
+                            helm upgrade --install ${HELM_RELEASE} ${HELM_CHART} \
+                                -f ${HELM_CHART}/environments/dev/values.yaml \
+                                --set frontend.image.tag=${env.IMAGE_TAG} \
+                                --namespace default \
+                                --atomic \
+                                --timeout 5m \
+                                --history-max 5
+                        """
+
+                        sh "kubectl rollout status deployment/frontend --namespace default --timeout=3m"
+                        echo "Dev deploy complete — ${env.IMAGE_TAG}"
+                    }
+                }
+            }
+        }
+
+        // ── 7. Manual approval gate before Staging ─────────────────────────────
+        stage('Approve → Staging') {
+            when { branch 'main' }
+            steps {
+                timeout(time: 30, unit: 'MINUTES') {
+                    input(
+                        message : "Deploy frontend:${env.IMAGE_TAG} to STAGING?",
+                        ok      : 'Deploy to Staging'
+                    )
+                }
+            }
+        }
+
+        // ── 8. Deploy Staging — same image SHA as Dev ──────────────────────────
+        stage('Deploy Staging') {
+            when { branch 'main' }
+            steps {
+                script {
+                    withCredentials([[
+                        $class              : 'AmazonWebServicesCredentialsBinding',
+                        credentialsId       : 'aws-credentials',
+                        accessKeyVariable   : 'AWS_ACCESS_KEY_ID',
+                        secretKeyVariable   : 'AWS_SECRET_ACCESS_KEY'
+                    ]]) {
+                        sh "aws eks update-kubeconfig --name ${CLUSTER_NAME} --region ${AWS_REGION}"
+
+                        sh """
+                            helm upgrade --install ${HELM_RELEASE} ${HELM_CHART} \
+                                -f ${HELM_CHART}/environments/staging/values.yaml \
+                                --set frontend.image.tag=${env.IMAGE_TAG} \
+                                --namespace staging \
+                                --atomic \
+                                --timeout 5m \
+                                --history-max 5
+                        """
+
+                        sh "kubectl rollout status deployment/frontend --namespace staging --timeout=3m"
+                        echo "Staging deploy complete — ${env.IMAGE_TAG}"
+                    }
+                }
+            }
+        }
+
+        // ── 9. Manual approval gate before Production ──────────────────────────
+        stage('Approve → Production') {
+            when { branch 'main' }
+            steps {
+                timeout(time: 60, unit: 'MINUTES') {
+                    input(
+                        message : "PRODUCTION: Deploy frontend:${env.IMAGE_TAG}?\n\nVerify staging is healthy before approving.",
+                        ok      : 'Deploy to Production'
+                    )
+                }
+            }
+        }
+
+        // ── 10. Deploy Production — same image SHA, never rebuilt ───────────────
+        stage('Deploy Production') {
+            when { branch 'main' }
+            steps {
+                script {
+                    withCredentials([[
+                        $class              : 'AmazonWebServicesCredentialsBinding',
+                        credentialsId       : 'aws-credentials',
+                        accessKeyVariable   : 'AWS_ACCESS_KEY_ID',
+                        secretKeyVariable   : 'AWS_SECRET_ACCESS_KEY'
+                    ]]) {
+                        sh "aws eks update-kubeconfig --name ${CLUSTER_NAME} --region ${AWS_REGION}"
+
+                        sh """
+                            helm upgrade --install ${HELM_RELEASE} ${HELM_CHART} \
+                                -f ${HELM_CHART}/environments/prod/values.yaml \
+                                --set frontend.image.tag=${env.IMAGE_TAG} \
+                                --namespace prod \
+                                --atomic \
+                                --timeout 10m \
+                                --history-max 5
+                        """
+
+                        sh "kubectl rollout status deployment/frontend --namespace prod --timeout=5m"
+                        echo "Production deploy complete — ${env.IMAGE_TAG}"
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo "FAILED — frontend:${env.IMAGE_TAG ?: 'unknown'} on branch ${env.BRANCH_NAME}"
+            // TODO: Add Slack notification — withCredentials([string(credentialsId: 'SLACK_TOKEN', ...)]) { slackSend ... }
+        }
+        success {
+            echo "SUCCESS — ${env.IMAGE_FULL}"
+        }
+        always {
+            sh "docker rmi ${env.IMAGE_FULL} || true"
+            cleanWs()
+        }
+    }
+}

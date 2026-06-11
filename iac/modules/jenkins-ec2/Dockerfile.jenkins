@@ -1,0 +1,22 @@
+FROM jenkins/jenkins:2.504.1-jdk17
+
+USER root
+
+RUN apt-get update -qq && apt-get install -y -qq curl unzip
+
+# AWS CLI v2
+RUN curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip \
+    && unzip -q /tmp/awscliv2.zip -d /tmp \
+    && /tmp/aws/install \
+    && rm -rf /tmp/awscliv2.zip /tmp/aws
+
+# kubectl — pinned to match EKS cluster version
+RUN curl -fsSLo /usr/local/bin/kubectl \
+    "https://dl.k8s.io/release/v1.30.0/bin/linux/amd64/kubectl" \
+    && chmod +x /usr/local/bin/kubectl
+
+# Helm
+RUN curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 \
+    | DESIRED_VERSION=v3.14.0 bash
+
+USER jenkins
