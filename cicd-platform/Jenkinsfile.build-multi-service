@@ -305,9 +305,9 @@ def buildAndPushService(Map config) {
         echo "[${serviceName}] Image: ${imageFull}"
 
         try {
+            sh "rm -rf /tmp/${serviceName} && mkdir -p /tmp/${serviceName}"
             dir("/tmp/${serviceName}") {
                 sh """
-                    rm -rf .git
                     git clone --depth 1 --branch ${branch} \
                         https://${GITHUB_TOKEN}@github.com/proops2026-helpdesk/${repo}.git .
                 """
