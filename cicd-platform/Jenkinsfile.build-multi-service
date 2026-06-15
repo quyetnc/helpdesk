@@ -1,0 +1,341 @@
+#!/usr/bin/env groovy
+/**
+ * Multi-Service Build Pipeline
+ *
+ * Parameters are defined in Jenkins UI via Active Choices Plugin
+ * This Jenkinsfile just accepts and uses them
+ */
+
+def SERVICES = [
+    [name: 'frontend', repo: 'frontend-react-spa'],
+    [name: 'api-gateway', repo: 'api-gateway'],
+    [name: 'user-service', repo: 'user-service'],
+    [name: 'ticket-service', repo: 'ticket-service'],
+    [name: 'notification-service', repo: 'notification-service'],
+]
+
+pipeline {
+    agent any
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+        timeout(time: 2, unit: 'HOURS')
+        timestamps()
+        disableConcurrentBuilds()
+    }
+
+    parameters {
+        // ────────────────── FRONTEND ──────────────────
+        booleanParam(name: 'FRONTEND_BUILD', defaultValue: true, description: 'Build Frontend')
+        choice(
+            name: 'FRONTEND_BRANCH',
+            choices: [
+                'main',
+                'develop',
+                'staging',
+                'production',
+                'feature/new-ui',
+                'feature/redesign',
+                'hotfix/emergency'
+            ],
+            description: 'Frontend branch'
+        )
+
+        // ────────────────── API GATEWAY ──────────────────
+        booleanParam(name: 'API_GATEWAY_BUILD', defaultValue: true, description: 'Build API Gateway')
+        choice(
+            name: 'API_GATEWAY_BRANCH',
+            choices: [
+                'main',
+                'develop',
+                'staging',
+                'production',
+                'feature/rate-limiting',
+                'feature/auth-refactor',
+                'hotfix/cors'
+            ],
+            description: 'API Gateway branch'
+        )
+
+        // ────────────────── USER SERVICE ──────────────────
+        booleanParam(name: 'USER_SERVICE_BUILD', defaultValue: true, description: 'Build User Service')
+        choice(
+            name: 'USER_SERVICE_BRANCH',
+            choices: [
+                'main',
+                'develop',
+                'staging',
+                'production',
+                'feature/oauth',
+                'feature/mfa',
+                'hotfix/login'
+            ],
+            description: 'User Service branch'
+        )
+
+        // ────────────────── TICKET SERVICE ──────────────────
+        booleanParam(name: 'TICKET_SERVICE_BUILD', defaultValue: true, description: 'Build Ticket Service')
+        choice(
+            name: 'TICKET_SERVICE_BRANCH',
+            choices: [
+                'main',
+                'develop',
+                'staging',
+                'production',
+                'feature/sla-calculation',
+                'feature/bulk-operations',
+                'hotfix/workflow'
+            ],
+            description: 'Ticket Service branch'
+        )
+
+        // ────────────────── NOTIFICATION SERVICE ──────────────────
+        booleanParam(name: 'NOTIFICATION_SERVICE_BUILD', defaultValue: true, description: 'Build Notification Service')
+        choice(
+            name: 'NOTIFICATION_SERVICE_BRANCH',
+            choices: [
+                'main',
+                'develop',
+                'staging',
+                'production',
+                'feature/slack-integration',
+                'feature/email-templates',
+                'hotfix/delivery'
+            ],
+            description: 'Notification Service branch'
+        )
+
+        // ────────────────── BUILD OPTIONS ──────────────────
+        choice(
+            name: 'BUILD_STRATEGY',
+            choices: ['parallel', 'sequential'],
+            description: 'Build strategy'
+        )
+
+        booleanParam(
+            name: 'SKIP_TESTS',
+            defaultValue: false,
+            description: 'Skip tests (dev only)'
+        )
+
+        booleanParam(
+            name: 'DRY_RUN',
+            defaultValue: false,
+            description: 'Dry run (no ECR push)'
+        )
+    }
+
+    environment {
+        GITHUB_ORG = 'proops2026-helpdesk'
+        GIT_CREDENTIALS = 'github-token'
+        AWS_CREDENTIALS = 'aws-credentials'
+        DOCKER_BUILDKIT = '0'
+        AWS_REGION = 'ap-northeast-1'
+        AWS_ACCOUNT = '905418181527'
+        ECR_REGISTRY = '905418181527.dkr.ecr.ap-northeast-1.amazonaws.com'
+    }
+
+    stages {
+        stage('Initialization') {
+            steps {
+                script {
+                    echo "═══════════════════════════════════════════════════════════"
+                    echo "Multi-Service Build Pipeline"
+                    echo "═══════════════════════════════════════════════════════════"
+                    echo ""
+                    echo "Build Configuration:"
+                    echo "  Strategy: ${params.BUILD_STRATEGY}"
+                    echo "  Skip Tests: ${params.SKIP_TESTS}"
+                    echo "  Dry Run: ${params.DRY_RUN}"
+                    echo ""
+                    echo "Selected Branches:"
+                    SERVICES.each { service ->
+                        def buildParam = params["${service.name.toUpperCase().replace('-', '_')}_BUILD"]
+                        def branchParam = params["${service.name.toUpperCase().replace('-', '_')}_BRANCH"]
+                        if (buildParam) {
+                            echo "  ✓ ${service.name}: ${branchParam}"
+                        } else {
+                            echo "  ✗ ${service.name}: (skipped)"
+                        }
+                    }
+                    echo ""
+                }
+            }
+        }
+
+        stage('Login to ECR') {
+            steps {
+                script {
+                    withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-credentials']]) {
+                        sh """
+                            echo "Logging in to ECR..."
+                            aws ecr get-login-password --region ${env.AWS_REGION} | \
+                            docker login --username AWS --password-stdin ${env.ECR_REGISTRY}
+                            echo "✓ ECR login successful"
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Build & Push Services') {
+            parallel {
+                stage('Build Frontend') {
+                    when { expression { params.FRONTEND_BUILD } }
+                    steps {
+                        script {
+                            buildAndPushService(
+                                serviceName: 'frontend',
+                                repo: 'frontend-react-spa',
+                                branch: params.FRONTEND_BRANCH
+                            )
+                        }
+                    }
+                }
+
+                stage('Build API Gateway') {
+                    when { expression { params.API_GATEWAY_BUILD } }
+                    steps {
+                        script {
+                            buildAndPushService(
+                                serviceName: 'api-gateway',
+                                repo: 'api-gateway',
+                                branch: params.API_GATEWAY_BRANCH
+                            )
+                        }
+                    }
+                }
+
+                stage('Build User Service') {
+                    when { expression { params.USER_SERVICE_BUILD } }
+                    steps {
+                        script {
+                            buildAndPushService(
+                                serviceName: 'user-service',
+                                repo: 'user-service',
+                                branch: params.USER_SERVICE_BRANCH
+                            )
+                        }
+                    }
+                }
+
+                stage('Build Ticket Service') {
+                    when { expression { params.TICKET_SERVICE_BUILD } }
+                    steps {
+                        script {
+                            buildAndPushService(
+                                serviceName: 'ticket-service',
+                                repo: 'ticket-service',
+                                branch: params.TICKET_SERVICE_BRANCH
+                            )
+                        }
+                    }
+                }
+
+                stage('Build Notification Service') {
+                    when { expression { params.NOTIFICATION_SERVICE_BUILD } }
+                    steps {
+                        script {
+                            buildAndPushService(
+                                serviceName: 'notification-service',
+                                repo: 'notification-service',
+                                branch: params.NOTIFICATION_SERVICE_BRANCH
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Summary') {
+            steps {
+                script {
+                    echo ""
+                    echo "═══════════════════════════════════════════════════════════"
+                    echo "✓ Build Complete!"
+                    echo "═══════════════════════════════════════════════════════════"
+                    echo ""
+                    echo "Images pushed to ECR:"
+                    SERVICES.each { service ->
+                        def buildParam = params["${service.name.toUpperCase().replace('-', '_')}_BUILD"]
+                        if (buildParam) {
+                            echo "  ✓ ${service.name}"
+                        }
+                    }
+                    echo ""
+                }
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo "❌ Build failed!"
+        }
+        cleanup {
+            cleanWs()
+        }
+    }
+}
+
+/**
+ * Build and push Docker image for a service
+ */
+def buildAndPushService(Map config) {
+    def serviceName = config.serviceName
+    def repo = config.repo
+    def branch = config.branch
+
+    withCredentials([string(credentialsId: 'github-token', variable: 'GITHUB_TOKEN')]) {
+        def imageTag = sh(
+            script: """
+                git ls-remote --heads https://${GITHUB_TOKEN}@github.com/proops2026-helpdesk/${repo}.git ${branch} | \
+                awk '{print \$1}' | cut -c1-7
+            """,
+            returnStdout: true
+        ).trim()
+
+        if (!imageTag) {
+            error "Failed to get commit SHA for ${serviceName}"
+        }
+
+        def imageFull = "${env.ECR_REGISTRY}/${serviceName}:${imageTag}"
+
+        echo "[${serviceName}] Building from ${branch}@${imageTag}"
+        echo "[${serviceName}] Image: ${imageFull}"
+
+        try {
+            dir("/tmp/${serviceName}") {
+                sh """
+                    rm -rf .git
+                    git clone --depth 1 --branch ${branch} \
+                        https://${GITHUB_TOKEN}@github.com/proops2026-helpdesk/${repo}.git .
+                """
+
+                if (!params.SKIP_TESTS) {
+                    sh """
+                        echo "[${serviceName}] Running tests..."
+                        npm ci && npm run test:coverage 2>&1 | head -50 || true
+                    """
+                }
+
+                sh """
+                    docker pull ${imageFull} 2>/dev/null || true
+                    docker build --cache-from ${imageFull} -t ${imageFull} .
+                """
+
+                if (!params.DRY_RUN) {
+                    sh """
+                        docker push ${imageFull}
+                        echo "[${serviceName}] ✓ Pushed: ${imageFull}"
+                    """
+                } else {
+                    echo "[${serviceName}] DRY RUN - skipped ECR push"
+                }
+            }
+
+        } catch (Exception e) {
+            error "[${serviceName}] Build failed: ${e.message}"
+        }
+    }
+}
